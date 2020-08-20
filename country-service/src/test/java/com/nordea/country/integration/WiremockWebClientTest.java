@@ -7,7 +7,11 @@ import java.util.List;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.nordea.country.CountryApplication;
+import com.nordea.country.config.AppConfig;
+import com.nordea.country.config.AppConfigTest;
 import com.nordea.country.dto.CountriesRequestDto;
 import com.nordea.country.dto.CountriesResponseDto;
 import com.nordea.country.dto.CountryRequestDto;
@@ -19,97 +23,98 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.context.annotation.PropertySources;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+import lombok.extern.slf4j.Slf4j;
+
+import com.nordea.country.CountryApplicationTests;
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+
+
+@ActiveProfiles({"test"})
+@SpringBootTest(classes = {CountryApplication.class, AppConfigTest.class})
+@PropertySources({@PropertySource(value = "classpath:application-test.properties")})
 public class WiremockWebClientTest {
-    @Value("${country.rest.api.endpoint}")
-    private String countryEndpoint;
 
-    private WireMockServer mockServer;
+        private WireMockServer mockServer;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+        @Autowired
+        private ObjectMapper objectMapper;
 
-    @Autowired
-    private CountryServiceClient countryServiceClient;
+        @Autowired
+        private CountryServiceClient countryServiceClient;
 
-    @BeforeEach
-    private void beforeEach() {
-        mockServer = new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
-        mockServer.start();
-    }
+        @BeforeEach
+        private void beforeEach() {
+                mockServer = new WireMockServer(WireMockConfiguration.wireMockConfig()
+                                .port(AppConfigTest.API_PORT));
+                mockServer.start();
+        }
 
-    @AfterEach
-    private void afterEach() {
-        mockServer.stop();
-    }
+        @AfterEach
+        private void afterEach() {
+                mockServer.stop();
+        }
 
-    @Test
-    void testGetAllCountries() throws JsonProcessingException {
-        CountriesResponseDto afghanistan = new CountriesResponseDto("Afghanistan", "AF");
-        CountriesResponseDto aland = new CountriesResponseDto("Åland Islands", "AX");
-        List<CountriesResponseDto> dummyCountryList = new ArrayList<CountriesResponseDto>();
+        @Test
+        void testGetAllCountries() throws JsonProcessingException {
+                CountriesRequestDto afghanistan = new CountriesRequestDto("Afghanistan", "AF");
+                CountriesRequestDto aland = new CountriesRequestDto("Åland Islands", "AX");
+                List<CountriesRequestDto> dummyCountryList = new ArrayList<CountriesRequestDto>();
 
-        dummyCountryList.add(afghanistan);
-        dummyCountryList.add(aland);
+                dummyCountryList.add(afghanistan);
+                dummyCountryList.add(aland);
 
-        String jsonBody = objectMapper.writeValueAsString(Arrays.asList(dummyCountryList));
+                String jsonBody = objectMapper.writeValueAsString(dummyCountryList);
 
-        mockServer.stubFor(get(urlEqualTo(countryEndpoint + "/all"))
-                .willReturn(aResponse().withStatus(200).withBody(jsonBody)));
-    }
+                mockServer.stubFor(get(urlEqualTo("/all/")).willReturn(
+                                aResponse().withHeader("Content-Type", "application/json")
+                                                .withStatus(200).withBody(jsonBody)));
 
-    @Test
-    void testGetCountryByName() throws JsonProcessingException {
-        CountryResponseDto finland = CountryResponseDto.builder().name("Finland")
-                .capital("Helsinki").countryCode("FI").flagFileUrl("some string").build();
+                Flux<CountriesRequestDto> countriesListRequest =
+                                countryServiceClient.getAllCountriesFromService();
 
-        String jsonBody = objectMapper.writeValueAsString(finland);
+                StepVerifier.create(countriesListRequest).expectNext(afghanistan).expectNext(aland)
+                                .expectComplete().verify();
+        }
 
-        mockServer.stubFor(get(countryEndpoint + "/name" + "finland")
-                .willReturn(aResponse().withStatus(200).withBody(jsonBody)));
-    }
+        @Test
+        void testGetCountryByName() throws JsonProcessingException {
+                String countryName = "finland";
 
-    @Test
-    void testNonExistCountryName() {
-        String nonExistName = "vietfin";
+                CountryRequestDto finland = CountryRequestDto.builder().alpha2Code("FI")
+                                .capital("Helsinki").flag("something").name("Finland")
+                                .population((long) 5491817).build();
 
-        mockServer.stubFor(get(countryEndpoint + "/name/" + nonExistName)
-                .willReturn(aResponse().withStatus(404)));
-    }
+                String jsonBody = objectMapper.writeValueAsString(finland);
 
-    @Test
-    void testRequestGetCountries() {
-        Flux<CountriesRequestDto> countriesListRequest =
-                countryServiceClient.getAllCountriesFromService();
+                mockServer.stubFor(get("/name/" + countryName)
+                                .willReturn(aResponse().withStatus(200).withBody(jsonBody)));
 
-        StepVerifier.create(countriesListRequest)
-                .expectNext(new CountriesRequestDto("Afghanistan", "AF"))
-                .expectNext(new CountriesRequestDto("Åland Islands", "AX")).expectComplete();
-    }
+                Mono<CountryRequestDto> countryRequest =
+                                countryServiceClient.getCountryByNameFromService(countryName);
 
-    @Test
-    void testRequestGetCountryByName() {
-        String countryName = "Finland";
-        Mono<CountryRequestDto> countryRequest =
-                countryServiceClient.getCountryByNameFromService(countryName);
-        CountryRequestDto finland = CountryRequestDto.builder().alpha2Code("FI").capital("Helsinki")
-                .flag("https://restcountries.eu/data/fin.svg").name("Finland")
-                .population((long) 5491817).build();
+                StepVerifier.create(countryRequest).expectNext(finland).expectComplete();
+        }
 
-        StepVerifier.create(countryRequest).expectNext(finland).expectComplete();
-    }
+        @Test
+        void testNonExistCountryName() {
+                String nonExistName = "vietfin";
 
-    @Test
-    void testRequestGetCountryByNameThatNotExist() {
+                mockServer.stubFor(get("/name/" + nonExistName)
+                                .willReturn(aResponse().withStatus(404)));
 
-        String nonExistName = "vietfin";
-        Mono<CountryRequestDto> countryRequest =
-                countryServiceClient.getCountryByNameFromService(nonExistName);
+                Mono<CountryRequestDto> countryRequest =
+                                countryServiceClient.getCountryByNameFromService(nonExistName);
 
-        StepVerifier.create(countryRequest).expectError(CountryServiceException.class).verify();
-    }
+                StepVerifier.create(countryRequest).expectError(CountryServiceException.class)
+                                .verify();
+        }
 }

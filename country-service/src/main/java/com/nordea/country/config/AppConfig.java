@@ -10,4 +10,9 @@ public class AppConfig {
     WebClient loadWebClient() {
         return WebClient.create("http://localhost:8080");
     }
+
+    @Bean
+    public String apiHost() {
+        return "https://restcountries.eu/rest/v2";
+    }
 }

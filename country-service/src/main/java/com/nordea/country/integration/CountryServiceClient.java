@@ -5,8 +5,10 @@ import com.nordea.country.dto.CountryRequestDto;
 import com.nordea.country.exceptions.CountryServiceException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.WebClient;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -17,8 +19,9 @@ import reactor.core.publisher.Mono;
  */
 @Service
 public class CountryServiceClient {
-        @Value("${country.rest.api.endpoint}")
-        private String countryEndpoint;
+
+        @Autowired
+        private String apiHost;
 
         @Autowired
         private WebClient client;
@@ -27,8 +30,9 @@ public class CountryServiceClient {
         private final String COUNTRY_NAME_ENDPOINT = "/name/";
 
         public Flux<CountriesRequestDto> getAllCountriesFromService() {
+
                 Flux<CountriesRequestDto> response = client.get()
-                                .uri(countryEndpoint + ALL_COUNTRIES_ENDPOINT)
+                                .uri(apiHost + ALL_COUNTRIES_ENDPOINT)
                                 .accept(MediaType.APPLICATION_JSON).retrieve()
                                 .onStatus(HttpStatus::is4xxClientError, clientResponse -> Mono
                                                 .error(new CountryServiceException(
@@ -47,7 +51,7 @@ public class CountryServiceClient {
 
         public Mono<CountryRequestDto> getCountryByNameFromService(String countryName) {
                 Mono<CountryRequestDto> response = client.get()
-                                .uri(countryEndpoint + COUNTRY_NAME_ENDPOINT + countryName)
+                                .uri(apiHost + COUNTRY_NAME_ENDPOINT + countryName)
                                 .accept(MediaType.APPLICATION_JSON).retrieve()
                                 .onStatus(HttpStatus::is4xxClientError, clientResponse -> Mono
                                                 .error(new CountryServiceException(
