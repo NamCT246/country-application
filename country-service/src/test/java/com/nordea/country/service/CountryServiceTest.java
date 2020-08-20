@@ -19,15 +19,23 @@ public class CountryServiceTest {
 
     @Test
     @DisplayName("Should get a list of all countries and return as a JSON with  the key countries")
-    void getAllCountries() {
+    void getAllCountries_returnCountriesListResponseDto() {
         webTestClient.get().uri("/api/countries/").exchange().expectStatus().isOk()
                 .expectBody(CountriesListResponseDto.class);
     }
 
     @Test
     @DisplayName("Should get a JSON contains data about the country")
-    void getCountryByName() {
+    void getCountryByName_returnCountryResponseDto() {
         webTestClient.get().uri("api/countries/{name}", "finland").exchange().expectStatus().isOk()
                 .expectBody(CountryResponseDto.class);
+    }
+
+    @Test
+    void getCountryByName_whenCountryNotExist_returnNotFound() {
+        String countryName = "vietfin";
+
+        webTestClient.get().uri("api/countries/{name}", countryName).exchange().expectStatus()
+                .is5xxServerError();
     }
 }
